@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, timedelta
-import numpy as np
 
 # =========================
 # FUNÇÕES FINANCEIRAS
@@ -56,9 +55,6 @@ def simular_cofrinho(
 
     df = pd.DataFrame(registros)
 
-    # Garantir que Data seja apenas DATE (sem horário)
-    df["Data"] = pd.to_datetime(df["Data"]).dt.date
-
     dias_corridos = (data_fim - data_inicio).days
     ir = aliquota_ir_regressiva(dias_corridos)
     lucro = saldo - total_aportado
@@ -69,7 +65,7 @@ def simular_cofrinho(
 
 def saldo_para_meta(meta_diaria, taxa_diaria):
     if taxa_diaria <= 0:
-        return 0
+        return 0.0
     return meta_diaria / taxa_diaria
 
 
@@ -79,9 +75,7 @@ def saldo_para_meta(meta_diaria, taxa_diaria):
 st.set_page_config(page_title="Simulador de Cofrinho", layout="wide")
 
 st.title("💰 Simulador de Cofrinho – Liquidez Diária")
-st.markdown(
-    "Simulação **estimativa** baseada em CDI, capitalização diária e dias úteis."
-)
+st.write("Simulação estimativa baseada em CDI e dias úteis.")
 
 # =========================
 # SIDEBAR
@@ -115,11 +109,7 @@ with st.sidebar:
     st.divider()
     st.subheader("➕ Aporte pontual")
 
-    data_aporte = st.date_input(
-        "Data do aporte",
-        key="aporte_data"
-    )
-
+    data_aporte = st.date_input("Data do aporte")
     valor_aporte = st.number_input(
         "Valor do aporte (R$)",
         min_value=0.0,
@@ -131,10 +121,11 @@ with st.sidebar:
 
     if st.button("Adicionar aporte"):
         st.session_state.aportes[data_aporte] = valor_aporte
-        st.success("Aporte adicionado com sucesso!")
+        st.success("Aporte adicionado!")
+
 
 # =========================
-# SIMULAÇÃO
+# BOTÃO SIMULAR
 # =========================
 if st.button("▶️ Simular"):
     df, saldo_final, ir_estimado, taxa_diaria = simular_cofrinho(
@@ -146,48 +137,25 @@ if st.button("▶️ Simular"):
         st.session_state.aportes
     )
 
-    df_graf = df.set_index("Data")
+    # Guardar resultados no estado
+    st.session_state.simulado = True
+    st.session_state.saldo_final = saldo_final
+    st.session_state.taxa_diaria = taxa_diaria
 
-    # =========================
-    # MÉTRICAS
-    # =========================
-    col1, col2, col3 = st.columns(3)
+    st.success("Simulação realizada com sucesso!")
 
-    col1.metric(
-        "Saldo final bruto",
-        f"R$ {saldo_final:,.2f}"
-    )
 
-    col2.metric(
-        "IR estimado (informativo)",
-        f"R$ {ir_estimado:,.2f}"
-    )
+# =========================
+# RESULTADOS
+# =========================
+if st.session_state.get("simulado", False):
 
-    col3.metric(
-        "Rendimento diário final",
-        f"R$ {(saldo_final * taxa_diaria):,.2f}"
-    )
+    st.subheader("📊 Resultado da simulação")
 
-    st.divider()
-
-    # =========================
-    # GRÁFICOS
-    # =========================
-    st.subheader("📈 Evolução do saldo")
-    st.line_chart(df_graf["Saldo"])
-
-    st.subheader("💸 Rendimento diário")
-    st.line_chart(df_graf["Rendimento do dia"])
-
-    st.subheader("📊 Composição do saldo")
-
-    df_graf["Aporte acumulado"] = df["Aporte"].cumsum() + saldo_inicial
-    df_graf["Rendimento acumulado"] = (
-        df_graf["Saldo"] - df_graf["Aporte acumulado"]
-    )
-
-    st.area_chart(
-        df_graf[["Aporte acumulado", "Rendimento acumulado"]]
+    st.write(f"Saldo final estimado: R$ {st.session_state.saldo_final:,.2f}")
+    st.write(
+        f"Rendimento diário estimado no final: "
+        f"R$ {(st.session_state.saldo_final * st.session_state.taxa_diaria):,.2f}"
     )
 
     st.divider()
@@ -207,20 +175,13 @@ if st.button("▶️ Simular"):
         key="meta_diaria"
     )
 
-    saldo_necessario = saldo_para_meta(meta, taxa_diaria)
-
-    st.markdown(
-        f"""
-        💡 Para ganhar aproximadamente **R$ {meta:,.2f} por dia**,  
-        você precisaria ter cerca de **R$ {saldo_necessario:,.2f}** investidos,
-        considerando os parâmetros atuais.
-        """
+    saldo_necessario = saldo_para_meta(
+        meta,
+        st.session_state.taxa_diaria
     )
 
-    st.divider()
-
-    st.subheader("📋 Últimos dias da simulação")
-    st.dataframe(
-        df.tail(10),
-        use_container_width=True
+    st.write(
+        f"Para ganhar aproximadamente R$ {meta:,.2f} por dia, "
+        f"você precisaria ter cerca de R$ {saldo_necessario:,.2f} investidos, "
+        f"considerando os parâmetros atuais."
     )
