@@ -26,7 +26,7 @@ def simular_cofrinho(
     aportes
 ):
     dias_ano = 252
-    taxa_diaria = (1 + cdi_anual)**(1 / dias_ano) - 1
+    taxa_diaria = (1 + cdi_anual) ** (1 / dias_ano) - 1
     taxa_diaria *= percentual_cdi
 
     saldo = saldo_inicial
@@ -56,6 +56,9 @@ def simular_cofrinho(
 
     df = pd.DataFrame(registros)
 
+    # Garantir que Data seja apenas DATE (sem horário)
+    df["Data"] = pd.to_datetime(df["Data"]).dt.date
+
     dias_corridos = (data_fim - data_inicio).days
     ir = aliquota_ir_regressiva(dias_corridos)
     lucro = saldo - total_aportado
@@ -76,36 +79,59 @@ def saldo_para_meta(meta_diaria, taxa_diaria):
 st.set_page_config(page_title="Simulador de Cofrinho", layout="wide")
 
 st.title("💰 Simulador de Cofrinho – Liquidez Diária")
-
 st.markdown(
-    "Este app é uma **estimativa didática** baseada em CDI, dias úteis e capitalização diária."
+    "Simulação **estimativa** baseada em CDI, capitalização diária e dias úteis."
 )
 
 # =========================
-# INPUTS
+# SIDEBAR
 # =========================
 with st.sidebar:
     st.header("📌 Parâmetros")
 
-    saldo_inicial = st.number_input("Saldo inicial (R$)", value=1550.0, step=50.0)
-    cdi_anual = st.number_input("CDI anual (%)", value=10.5) / 100
-    percentual_cdi = st.number_input("% do CDI", value=102.0) / 100
+    saldo_inicial = st.number_input(
+        "Saldo inicial (R$)",
+        value=1550.0,
+        step=50.0
+    )
 
-    data_inicio = st.date_input("Data inicial", value=date.today())
+    cdi_anual = st.number_input(
+        "CDI anual (%)",
+        value=10.5
+    ) / 100
+
+    percentual_cdi = st.number_input(
+        "% do CDI",
+        value=102.0
+    ) / 100
+
+    data_inicio = st.date_input(
+        "Data inicial",
+        value=date.today()
+    )
+
     data_fim = st.date_input("Data final")
 
     st.divider()
-    st.subheader("➕ Aporte único")
-    data_aporte = st.date_input("Data do aporte", key="aporte_data")
-    valor_aporte = st.number_input("Valor do aporte", min_value=0.0, step=50.0)
+    st.subheader("➕ Aporte pontual")
+
+    data_aporte = st.date_input(
+        "Data do aporte",
+        key="aporte_data"
+    )
+
+    valor_aporte = st.number_input(
+        "Valor do aporte (R$)",
+        min_value=0.0,
+        step=50.0
+    )
 
     if "aportes" not in st.session_state:
         st.session_state.aportes = {}
 
     if st.button("Adicionar aporte"):
         st.session_state.aportes[data_aporte] = valor_aporte
-        st.success("Aporte adicionado")
-
+        st.success("Aporte adicionado com sucesso!")
 
 # =========================
 # SIMULAÇÃO
@@ -120,10 +146,23 @@ if st.button("▶️ Simular"):
         st.session_state.aportes
     )
 
+    df_graf = df.set_index("Data")
+
+    # =========================
+    # MÉTRICAS
+    # =========================
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Saldo final bruto", f"R$ {saldo_final:,.2f}")
-    col2.metric("IR estimado (informativo)", f"R$ {ir_estimado:,.2f}")
+    col1.metric(
+        "Saldo final bruto",
+        f"R$ {saldo_final:,.2f}"
+    )
+
+    col2.metric(
+        "IR estimado (informativo)",
+        f"R$ {ir_estimado:,.2f}"
+    )
+
     col3.metric(
         "Rendimento diário final",
         f"R$ {(saldo_final * taxa_diaria):,.2f}"
@@ -135,37 +174,53 @@ if st.button("▶️ Simular"):
     # GRÁFICOS
     # =========================
     st.subheader("📈 Evolução do saldo")
-    st.line_chart(df.set_index("Data")["Saldo"])
+    st.line_chart(df_graf["Saldo"])
 
     st.subheader("💸 Rendimento diário")
-    st.line_chart(df.set_index("Data")["Rendimento do dia"])
+    st.line_chart(df_graf["Rendimento do dia"])
 
-    st.subheader("📊 Aporte × Rendimento")
-    df["Rendimento acumulado"] = df["Saldo"] - df["Aporte"].cumsum() - saldo_inicial
+    st.subheader("📊 Composição do saldo")
+
+    df_graf["Aporte acumulado"] = df["Aporte"].cumsum() + saldo_inicial
+    df_graf["Rendimento acumulado"] = (
+        df_graf["Saldo"] - df_graf["Aporte acumulado"]
+    )
+
     st.area_chart(
-        df.set_index("Data")[["Aporte", "Rendimento acumulado"]]
+        df_graf[["Aporte acumulado", "Rendimento acumulado"]]
     )
 
     st.divider()
 
     # =========================
-    # METAS
+    # META DE LIQUIDEZ
     # =========================
     st.subheader("🎯 Meta de liquidez diária")
+
+    if "meta_diaria" not in st.session_state:
+        st.session_state.meta_diaria = 1.0
 
     meta = st.number_input(
         "Quanto você quer ganhar por dia (R$)?",
         min_value=0.5,
-        step=0.5
+        step=0.5,
+        key="meta_diaria"
     )
 
     saldo_necessario = saldo_para_meta(meta, taxa_diaria)
 
-    st.info(
-        f"Para ganhar aproximadamente **R$ {meta:.2f} por dia**, "
-        f"você precisaria de cerca de **R$ {saldo_necessario:,.2f}** investidos."
+    st.markdown(
+        f"""
+        💡 Para ganhar aproximadamente **R$ {meta:,.2f} por dia**,  
+        você precisaria ter cerca de **R$ {saldo_necessario:,.2f}** investidos,
+        considerando os parâmetros atuais.
+        """
     )
 
     st.divider()
+
     st.subheader("📋 Últimos dias da simulação")
-    st.dataframe(df.tail(10), use_container_width=True)
+    st.dataframe(
+        df.tail(10),
+        use_container_width=True
+    )
